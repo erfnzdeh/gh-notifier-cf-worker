@@ -9,11 +9,10 @@
     "crons": ["0 9 * * *"]
   },
 
-  // `id` is filled in by the setup step in the README.
   "kv_namespaces": [
     {
       "binding": "FOLLOWERS",
-      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+      "id": "268a9a8344ab473db9d88aa5df9c8ccc"
     }
   ],
 
