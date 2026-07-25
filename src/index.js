@@ -253,9 +253,12 @@ async function check(env) {
     ...(await classifyDepartures(prev.followers.filter((l) => !after.has(l)), token)),
   ];
 
-  await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos }));
-
+  // Deliver before advancing the snapshot. If the send throws, KV keeps the
+  // old baseline and the next tick re-detects the same events — the failure
+  // mode is a duplicate message, not a silently swallowed follower.
   if (events.length) await sendTelegram(env, formatMessage(events, followers.length));
+
+  await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos }));
 
   return { seeded: false, followerCount: followers.length, events };
 }
