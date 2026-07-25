@@ -1,0 +1,15 @@
+{
+  "name": "gh-notifier",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Star, fork, follow and unfollow alerts for GitHub, over Telegram, on Cloudflare Workers",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

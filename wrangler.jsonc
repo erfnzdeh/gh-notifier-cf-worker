@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gh-notifier",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-25",
+
+  // 09:00 UTC daily. Cron Triggers are free (5 per account).
+  "triggers": {
+    "crons": ["0 9 * * *"]
+  },
+
+  // `id` is filled in by the setup step in the README.
+  "kv_namespaces": [
+    {
+      "binding": "FOLLOWERS",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ],
+
+  "vars": {
+    "GITHUB_USER": "erfnzdeh"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
