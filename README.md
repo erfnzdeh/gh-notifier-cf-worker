@@ -1,19 +1,15 @@
 # gh-notifier-cf-worker
 
+<p align="center">
+  <img src="docs/banner.png" alt="Telegram message from the bot listing new followers and an unfollow" width="700">
+</p>
+
 Telegram alerts when someone **stars**, **forks**, **follows** or **unfollows** you on
 GitHub. One Cloudflare Worker on a cron trigger. Free tier, no server, no database.
 
 GitHub has no notification event for any of these. Its notification system is built
 entirely around repository conversations, CI and mentions — `/notifications/settings`
 doesn't even exist as an endpoint — so the only way to know is to poll and diff.
-
-```
-⭐ someone → you/your-repo
-➕ someone-else
-➖ former-follower
-
-81 followers total
-```
 
 ## How it works
 
