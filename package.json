@@ -1,13 +1,19 @@
 {
-  "name": "gh-notifier",
+  "name": "gh-notifier-cf-worker",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Star, fork, follow and unfollow alerts for GitHub, over Telegram, on Cloudflare Workers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/erfnzdeh/gh-notifier-cf-worker.git"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node test/run.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.114.0"

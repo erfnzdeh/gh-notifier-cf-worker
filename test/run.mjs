@@ -1,0 +1,116 @@
+/**
+ * Smoke tests. Drives the real Worker module against the live GitHub API with
+ * KV and Telegram mocked, so the diffing and delivery-ordering logic is
+ * exercised end to end without deploying or sending anything.
+ *
+ *   npm test                       # uses GITHUB_USER from wrangler.jsonc
+ *   GITHUB_USER=octocat npm test   # or override
+ *   GH_TOKEN=$(gh auth token) npm test   # avoids the 60/hr anonymous limit
+ *
+ * Requires Node 18+ for global fetch/Request/Response.
+ */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const worker = (await import(join(here, "..", "src", "index.js"))).default;
+
+// Read the configured username out of wrangler.jsonc (tolerating comments).
+const cfg = readFileSync(join(here, "..", "wrangler.jsonc"), "utf8").replace(
+  /^\s*\/\/.*$/gm,
+  "",
+);
+const GITHUB_USER = process.env.GITHUB_USER || JSON.parse(cfg).vars.GITHUB_USER;
+
+let telegramUp = true;
+const sent = [];
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  if (String(url).includes("api.telegram.org")) {
+    if (!telegramUp) return new Response("Not Found", { status: 404 });
+    sent.push(JSON.parse(init.body).text);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+  return realFetch(url, init);
+};
+
+const makeKV = (init) => {
+  let s = init === undefined ? null : JSON.stringify(init);
+  return {
+    get: async () => (s === null ? null : JSON.parse(s)),
+    put: async (_k, v) => {
+      s = v;
+    },
+    dump: () => (s === null ? null : JSON.parse(s)),
+  };
+};
+
+const run = (kv) =>
+  worker
+    .fetch(new Request("https://x/run?key=t"), {
+      GITHUB_USER,
+      GITHUB_TOKEN: process.env.GH_TOKEN,
+      TELEGRAM_BOT_TOKEN: "fake",
+      TELEGRAM_CHAT_ID: "1",
+      TRIGGER_SECRET: "t",
+      FOLLOWERS: kv,
+    })
+    .then((r) => r.json());
+
+let failures = 0;
+const check = (name, cond, detail = "") => {
+  console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  if (!cond) failures++;
+};
+
+console.log(`\ngh-notifier smoke tests (user: ${GITHUB_USER})\n`);
+
+// 1 — first run seeds silently
+const kv = makeKV();
+const seed = await run(kv);
+check("first run seeds", seed.seeded === true, `${seed.followerCount} followers, ${seed.repoCount} repos`);
+check("seeding sends nothing", sent.length === 0);
+const base = kv.dump();
+
+// 2 — an unchanged run is a no-op
+const r2 = await run(makeKV(base));
+check("unchanged run reports nothing", r2.events.length === 0 && sent.length === 0);
+
+// 3 — synthetic star / fork / follow / unfollow are all detected
+const starRepo = Object.entries(base.repos).find(([, v]) => v.stars > 0)?.[0];
+const forkRepo = Object.entries(base.repos).find(([, v]) => v.forks > 0)?.[0];
+const t = structuredClone(base);
+if (starRepo) t.repos[starRepo].stars -= 1;
+if (forkRepo) t.repos[forkRepo].forks -= 1;
+const ghost = t.followers.pop();
+t.followers.unshift("octocat");
+sent.length = 0;
+const r3 = await run(makeKV(t));
+const kinds = r3.events.map((e) => e.kind);
+if (starRepo) check("detects a new star", kinds.includes("star"), starRepo);
+if (forkRepo) check("detects a new fork", kinds.includes("fork"), forkRepo);
+check("detects a new follower", kinds.includes("follow"), ghost);
+check("detects a departure", kinds.includes("unfollow") || kinds.includes("deleted"), "octocat");
+check("sends exactly one message", sent.length === 1);
+
+// 4 — the ordering guarantee: a failed send must not consume the events
+telegramUp = false;
+const t4 = structuredClone(base);
+const pending = Object.entries(base.repos).find(([, v]) => v.stars > 0)?.[0];
+if (pending) {
+  t4.repos[pending].stars -= 1;
+  const kv4 = makeKV(t4);
+  const before = kv4.dump().repos[pending].stars;
+  await run(kv4);
+  check("failed delivery preserves the baseline", kv4.dump().repos[pending].stars === before);
+
+  telegramUp = true;
+  sent.length = 0;
+  const r5 = await run(kv4);
+  check("event survives the outage", r5.events.some((e) => e.kind === "star") && sent.length === 1);
+  check("baseline advances after success", kv4.dump().repos[pending].stars !== before);
+}
+
+console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
+process.exit(failures ? 1 : 0);

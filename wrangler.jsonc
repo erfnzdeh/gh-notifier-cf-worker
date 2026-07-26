@@ -1,14 +1,20 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+
+  // The deployed Worker name. Changing it deploys a *new* Worker and orphans
+  // the old one — including its secrets, which are per-Worker.
   "name": "gh-notifier",
   "main": "src/index.js",
   "compatibility_date": "2026-07-25",
 
   // 09:00 UTC daily. Cron Triggers are free (5 per account).
+  // Pick an hour that suits your timezone; the job is idempotent.
   "triggers": {
     "crons": ["0 9 * * *"]
   },
 
+  // Create your own with: wrangler kv namespace create FOLLOWERS
+  // Not a secret — a namespace id is useless without an API token.
   "kv_namespaces": [
     {
       "binding": "FOLLOWERS",
@@ -16,6 +22,7 @@
     }
   ],
 
+  // ── Change this to your own GitHub username before deploying. ──
   "vars": {
     "GITHUB_USER": "erfnzdeh"
   },

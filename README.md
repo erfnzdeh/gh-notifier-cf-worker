@@ -1,34 +1,45 @@
-# gh-notifier
+# gh-notifier-cf-worker
 
-Telegram alerts when someone **stars**, **forks**, **follows** or **unfollows** you on GitHub.
-Runs as a single Cloudflare Worker on a cron trigger. Free tier, no server.
+Telegram alerts when someone **stars**, **forks**, **follows** or **unfollows** you on
+GitHub. One Cloudflare Worker on a cron trigger. Free tier, no server, no database.
 
-GitHub has no notification event for any of these — its notification system is built
-entirely around repository conversations, CI and mentions — so the only way to know is
-to poll and diff.
+GitHub has no notification event for any of these. Its notification system is built
+entirely around repository conversations, CI and mentions — `/notifications/settings`
+doesn't even exist as an endpoint — so the only way to know is to poll and diff.
 
-## Lineage
+```
+⭐ someone → you/your-repo
+➕ someone-else
+➖ former-follower
 
-A rewrite of the notification logic from [andreausu/git-notifier](https://github.com/andreausu/git-notifier)
-(MIT, unmaintained since 2019), which was multi-tenant SaaS: Sinatra + Redis + Sidekiq +
-Puma + nginx across five Dockerfiles, with GitHub OAuth signup and HTML email digests.
-Single-user on Workers, that collapses to one cron handler and one KV key.
+81 followers total
+```
 
-Two deliberate departures from the original:
+## How it works
 
-**Star and fork detection.** git-notifier walked the received-events feed, cursoring on
-event id. Measured against a real account, that feed turns over 100 events roughly every
-six hours — fine for Sidekiq polling continuously, but a daily cron would miss almost
-everything. This version diffs `stargazers_count` and `forks_count` from
-`/users/{user}/repos` instead: one request, exact, and immune to any retention window.
-Naming *who* costs one extra request, and only for repos whose count actually moved.
+One cron tick fetches your follower list and your repo list, diffs both against a
+snapshot in Workers KV, and reports what changed.
 
-**Owned-repo matching.** The original tested `event.repo.name.include?(login)`, a substring
-match against `owner/name` that also fires on anyone else's repo whose *name* contains your
-username. This compares the owner segment exactly.
+```
+cron ─▶ GET /users/{user}/followers ─┐
+        GET /users/{user}/repos ─────┼─▶ diff vs KV ─▶ Telegram ─▶ commit new snapshot
+                                     ┘
+```
 
-Kept from the original: distinguishing an unfollow from a deleted account (a 404 on the
-user lookup means they're gone, not that they left).
+Two design decisions worth knowing, both learned the hard way:
+
+**Stars and forks come from repo counts, not the events feed.** The obvious approach is
+to walk `/users/{user}/received_events` for `WatchEvent` and `ForkEvent`. That feed is
+capped at ~300 events and, on an account that follows a few active people, turns over 100
+events in about six hours — a daily cron would miss almost everything. Diffing
+`stargazers_count` and `forks_count` from `/users/{user}/repos` is one request, exact, and
+has no retention window. Naming *who* costs one extra request, and only for repos whose
+count actually moved.
+
+**Delivery happens before the snapshot advances.** Commit-then-send means a failed send
+silently consumes the events it failed to report. Send-then-commit means a failure costs
+a duplicate message on the next tick instead. Losing a follower notification is worse than
+seeing one twice.
 
 ## Setup
 
@@ -36,20 +47,22 @@ user lookup means they're gone, not that they left).
 npm install
 ```
 
-**1. Telegram bot** — message [@BotFather](https://t.me/BotFather), send `/newbot`, keep the
-token. Then send your new bot any message and read your chat id from:
+**1. Telegram bot.** Message [@BotFather](https://t.me/BotFather), `/newbot`, keep the
+token. Send your new bot any message, then read your chat id:
 
 ```bash
 curl -s "https://api.telegram.org/bot<BOT_TOKEN>/getUpdates" | jq '.result[0].message.chat.id'
 ```
 
-**2. KV namespace** — create it and paste the printed `id` into `wrangler.jsonc`:
+**2. KV namespace.** Create it and paste the printed `id` into `wrangler.jsonc`:
 
 ```bash
 npx wrangler kv namespace create FOLLOWERS
 ```
 
-**3. Secrets:**
+**3. Set `GITHUB_USER`** in `wrangler.jsonc` to your own username.
+
+**4. Secrets.** Run each and paste at the prompt — the value is *not* a command argument:
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
@@ -57,27 +70,37 @@ npx wrangler secret put TELEGRAM_CHAT_ID
 npx wrangler secret put TRIGGER_SECRET
 ```
 
-`GITHUB_TOKEN` is optional — every endpoint used is public. But Workers share egress IPs
-and unauthenticated GitHub is 60 req/hr per IP, so a scopeless token is worth adding:
+`TRIGGER_SECRET` is any random string; it guards the manual endpoint. Generate one with
+`openssl rand -hex 16`.
+
+**5. `GITHUB_TOKEN`** — technically optional, practically necessary. Every endpoint used
+is public, but unauthenticated GitHub allows 60 requests/hour **per source IP**, and
+Workers share egress IPs with other tenants who will exhaust it for you. This is not
+hypothetical; it takes minutes to hit. A token raises you to 5,000/hour.
+
+Create a fine-grained token at
+[github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+with **Public Repositories (read-only)** and *no* account permissions — it reads exactly
+what an anonymous visitor can:
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
 ```
 
-**4. Deploy and seed.** The first run stores a baseline silently; without it every existing
-follower and star would arrive as a notification.
+**6. Deploy and seed.** The first run stores a baseline silently; without it every existing
+follower and star would arrive at once:
 
 ```bash
 npx wrangler deploy
-curl "https://gh-notifier.<your-subdomain>.workers.dev/run?key=<TRIGGER_SECRET>"
+curl "https://<worker>.<subdomain>.workers.dev/run?key=<TRIGGER_SECRET>"
 ```
 
-Set `vars.GITHUB_USER` in `wrangler.jsonc` if you are not `erfnzdeh`.
+Secrets are read fresh on every invocation, so rotating one never needs a redeploy.
 
 ## Cost
 
-One cron tick per day: ~2 GitHub requests, 1 KV read, 1 KV write, plus one lookup per repo
-whose counts moved.
+One tick per day: 2 GitHub requests, 1 KV read, 1 KV write, plus one lookup per repo whose
+counts moved.
 
 | Resource | Free limit | Used |
 |---|---|---|
@@ -89,20 +112,35 @@ whose counts moved.
 
 ## Limits
 
-- Only **net change between ticks** is visible. A star added and removed inside one window
-  cancels out, as does a follow-then-unfollow. Any polling design has this gap.
-- Unstars are reported as a count, not a name — GitHub exposes no way to see who left
+- Only **net change between ticks** is visible. A follow and unfollow inside one window
+  cancel out. Any polling design has this gap.
+- Unstars are reported as a count, not a name — GitHub offers no way to see who left
   without storing every stargazer login.
-- `/users/{user}/repos` covers repos you own. Add a token with `repo` scope to include
-  private ones.
+- `/users/{user}/repos` covers repos you own. A token with `repo` scope would include
+  private ones, but that is far more access than this needs.
 
-## Testing
+## Operating it
 
-`src/index.js` exposes `GET /run?key=<TRIGGER_SECRET>` for manual runs, returning the diff
-as JSON. `npx wrangler tail` streams live logs. Cron failures report themselves to Telegram
-rather than failing silently, since a silent failure is indistinguishable from "nothing
-happened".
+`GET /run?key=<TRIGGER_SECRET>` triggers a run and returns the diff as JSON; anything else
+returns 403 or 404. `npx wrangler tail` streams live logs. Cron failures report themselves
+to Telegram rather than failing silently — though if the *bot token itself* is missing,
+that report has no way out, so check `wrangler tail` when debugging a quiet Worker.
+
+## Credit
+
+A rewrite of the notification logic from
+[andreausu/git-notifier](https://github.com/andreausu/git-notifier) (MIT, unmaintained
+since 2019), which was multi-tenant SaaS: Sinatra, Redis, Sidekiq, Puma and nginx across
+five Dockerfiles, with OAuth signup and HTML email digests. Single-user on Workers, that
+collapses to one cron handler and one KV key.
+
+Kept from the original: distinguishing an unfollow from a deleted account, since a 404 on
+the user lookup means they're gone rather than that they left.
+
+Fixed from the original: owned-repo matching used a substring test against `owner/name`,
+which also fires on anyone else's repo whose *name* contains your username. This compares
+the owner segment exactly.
 
 ## License
 
-MIT, inheriting from git-notifier. See `LICENSE`.
+MIT, inheriting from git-notifier. See [LICENSE](LICENSE).
