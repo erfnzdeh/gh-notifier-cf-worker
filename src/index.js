@@ -9,23 +9,29 @@
  * and cursoring on event id. That was sound for Sidekiq polling continuously,
  * but measured against this account the feed turns over 100 events roughly
  * every six hours — a daily cron would miss almost everything. So stars and
- * forks come from the counts on /users/{user}/repos instead: one request,
- * exact, and immune to any retention window. We only spend a follow-up
- * request naming names on repos whose count actually moved.
+ * forks come from /users/{user}/repos instead: one request, exact, and immune
+ * to any retention window.
+ *
+ * The counts on that response tell us *that* something moved; naming *who*
+ * needs the stargazer and fork lists, so we keep those logins in the snapshot
+ * and diff them as sets. Only repos whose count actually changed get refetched,
+ * so the request budget is the same as when we merely counted — but every
+ * event carries an account, unstars and deleted forks included.
  *
  * Known gap: only net change between ticks is visible. A star added and
  * removed inside one window cancels out, as does a follow-then-unfollow.
  */
 
 const GH_API = "https://api.github.com";
-const KV_KEY = "state:v2";
+const KV_KEY = "state:v3";
 const PER_PAGE = 100;
 const MAX_PAGES = 20;
-const MAX_LOOKUPS = 8; // cap follow-up requests naming actors, per category
+const MAX_LOOKUPS = 8; // refetches for repos whose count moved, per tick
+const MAX_BACKFILL = 20; // list fetches for repos we have no baseline for, per tick
 
-function ghHeaders(token, accept = "application/vnd.github+json") {
+function ghHeaders(token) {
   const headers = {
-    Accept: accept,
+    Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     // GitHub rejects requests without a User-Agent.
     "User-Agent": "gh-notifier",
@@ -34,8 +40,8 @@ function ghHeaders(token, accept = "application/vnd.github+json") {
   return headers;
 }
 
-async function ghFetch(url, token, accept) {
-  const res = await fetch(url, { headers: ghHeaders(token, accept) });
+async function ghFetch(url, token) {
+  const res = await fetch(url, { headers: ghHeaders(token) });
   if (!res.ok) {
     const err = new Error(`GitHub ${res.status}: ${(await res.text()).slice(0, 200)}`);
     err.status = res.status;
@@ -76,30 +82,81 @@ async function fetchRepoStats(user, token) {
 }
 
 /**
- * Name the most recent stargazers of a repo. The stargazers endpoint returns
- * oldest-first with no sort option, so the newest sit at the end of the last
- * page — which we can address directly from the total count.
+ * The two per-repo actor lists, described once so the diff can treat them
+ * identically: which snapshot fields hold them, and what to call the people
+ * arriving and leaving.
  */
-async function recentStargazers(fullName, totalCount, wanted, token) {
-  const lastPage = Math.max(1, Math.ceil(totalCount / PER_PAGE));
-  const page = await ghFetch(
-    `${GH_API}/repos/${fullName}/stargazers?per_page=${PER_PAGE}&page=${lastPage}`,
-    token,
-    "application/vnd.github.star+json",
-  );
-  if (!Array.isArray(page)) return [];
-  // Entries carry { starred_at, user } under the star+json media type.
-  return page.slice(-wanted).map((e) => e.user?.login ?? e.login).filter(Boolean);
+const ACTOR_LISTS = [
+  {
+    field: "stargazers",
+    countField: "stars",
+    path: "stargazers",
+    pick: (u) => u.login,
+    added: "star",
+    removed: "unstar",
+    eventType: "WatchEvent",
+  },
+  {
+    field: "forkers",
+    countField: "forks",
+    path: "forks",
+    pick: (f) => f.owner?.login,
+    added: "fork",
+    removed: "unfork",
+    eventType: "ForkEvent",
+  },
+];
+
+/**
+ * Every login on one of a repo's actor lists, or undefined if the list is
+ * longer than we are willing to page through — past that the snapshot stops
+ * being worth its request cost and we fall back to reporting counts.
+ */
+async function fetchActors(spec, fullName, count, token) {
+  if (count > MAX_PAGES * PER_PAGE) return undefined;
+  try {
+    const rows = await ghPaginate(`/repos/${fullName}/${spec.path}`, token);
+    return rows.map(spec.pick).filter(Boolean);
+  } catch (err) {
+    // Degrading to a count-only event is fine; doing it silently is not. The
+    // stargazers endpoint requires authentication (forks does not), so a
+    // missing or expired GITHUB_TOKEN shows up here and nowhere else.
+    console.warn(`could not list ${spec.path} for ${fullName}: ${err.message}`);
+    return undefined;
+  }
 }
 
-/** Forks does support sort=newest, so this one is straightforward. */
-async function recentForkers(fullName, wanted, token) {
-  const forks = await ghFetch(
-    `${GH_API}/repos/${fullName}/forks?sort=newest&per_page=${Math.min(wanted, PER_PAGE)}`,
-    token,
-  );
-  return Array.isArray(forks) ? forks.map((f) => f.owner?.login).filter(Boolean) : [];
+/**
+ * Fallback for naming arrivals when the actor list is out of reach — which is
+ * the normal case for stargazers, since that endpoint demands a token with
+ * `contents=write` (fine-grained) or `public_repo` (classic) while everything
+ * else here reads fine anonymously.
+ *
+ * /repos/{owner}/{repo}/events needs no authentication at all and carries
+ * WatchEvent and ForkEvent with the actor attached. Two caveats keep it a
+ * fallback rather than the primary source: it retains only ~300 events for
+ * ~90 days, and there is no event for *un*starring, so it can never name a
+ * departure. Newest-first, so the first matches are the ones we want.
+ */
+async function fetchRepoEvents(fullName, token) {
+  try {
+    const events = await ghFetch(
+      `${GH_API}/repos/${fullName}/events?per_page=${PER_PAGE}`,
+      token,
+    );
+    return Array.isArray(events) ? events : [];
+  } catch (err) {
+    console.warn(`could not read events for ${fullName}: ${err.message}`);
+    return [];
+  }
 }
+
+const actorsFromEvents = (events, type, wanted) =>
+  events
+    .filter((e) => e.type === type)
+    .map((e) => e.actor?.login)
+    .filter(Boolean)
+    .slice(0, wanted);
 
 /**
  * A login missing from the follower list either unfollowed or deleted their
@@ -123,48 +180,97 @@ async function classifyDepartures(logins, token) {
   return out;
 }
 
-/** Diff repo stats into star/fork/unstar events, naming actors where cheap. */
+/**
+ * Diff repo snapshots into star/unstar/fork/unfork events, and return the
+ * snapshot to store next. Returns { events, repos }.
+ *
+ * A repo whose count moved gets its actor list refetched and set-diffed, which
+ * names both arrivals and departures. When we cannot do that — budget spent,
+ * request failed, list too long, or no baseline stored yet — we emit the old
+ * count-only event and drop the stored list rather than keep one we know is
+ * stale, so the next tick backfills a fresh baseline.
+ */
 async function diffRepos(prev, curr, token) {
   const events = [];
+  const repos = {};
   let lookups = 0;
+  let backfills = 0;
 
   for (const [fullName, now] of Object.entries(curr)) {
     const before = prev[fullName];
-    if (!before) continue; // brand new repo — nothing to compare against
+    const entry = { stars: now.stars, forks: now.forks };
 
-    const starDelta = now.stars - before.stars;
-    const forkDelta = now.forks - before.forks;
+    // Stars and forks share one events request; fetched only if a fallback
+    // actually needs it, and only once per repo.
+    let cachedEvents;
+    const repoEvents = async () => {
+      if (cachedEvents === undefined) cachedEvents = await fetchRepoEvents(fullName, token);
+      return cachedEvents;
+    };
 
-    if (starDelta > 0) {
-      let actors = [];
-      if (lookups < MAX_LOOKUPS) {
-        lookups++;
-        actors = await recentStargazers(fullName, now.stars, starDelta, token).catch(() => []);
+    for (const spec of ACTOR_LISTS) {
+      const count = now[spec.countField];
+      const wasList = before?.[spec.field];
+      // A brand new repo has nothing to compare against — no events, but we
+      // still want a baseline so the next tick can name whoever shows up.
+      const delta = before ? count - before[spec.countField] : 0;
+
+      let list;
+      if (delta !== 0) {
+        if (lookups < MAX_LOOKUPS) {
+          lookups++;
+          list = await fetchActors(spec, fullName, count, token);
+        }
+      } else if (wasList === undefined && count > 0 && backfills < MAX_BACKFILL) {
+        backfills++;
+        list = await fetchActors(spec, fullName, count, token);
+      } else {
+        list = wasList;
       }
+
+      if (list !== undefined) entry[spec.field] = list;
+
+      if (delta === 0) continue;
+
+      const named = [];
+      if (list && wasList) {
+        const gone = new Set(wasList);
+        const here = new Set(list);
+        for (const actor of list) {
+          if (!gone.has(actor)) named.push({ kind: spec.added, actor, repo: fullName });
+        }
+        for (const actor of wasList) {
+          if (!here.has(actor)) named.push({ kind: spec.removed, actor, repo: fullName });
+        }
+      }
+
+      // The set diff is authoritative and covers both directions. Only when it
+      // could not run do we fall back to the events feed, which names arrivals
+      // and nothing else — a departure stays a bare count either way.
+      if (!named.length && delta > 0) {
+        const actors = actorsFromEvents(await repoEvents(), spec.eventType, delta);
+        for (const actor of actors) {
+          named.push({ kind: spec.added, actor, repo: fullName });
+        }
+      }
+
       events.push(
-        ...(actors.length
-          ? actors.map((a) => ({ kind: "star", actor: a, repo: fullName }))
-          : [{ kind: "star", count: starDelta, repo: fullName }]),
+        ...(named.length
+          ? named
+          : [
+              {
+                kind: delta > 0 ? spec.added : spec.removed,
+                count: Math.abs(delta),
+                repo: fullName,
+              },
+            ]),
       );
-    } else if (starDelta < 0) {
-      events.push({ kind: "unstar", count: -starDelta, repo: fullName });
     }
 
-    if (forkDelta > 0) {
-      let actors = [];
-      if (lookups < MAX_LOOKUPS) {
-        lookups++;
-        actors = await recentForkers(fullName, forkDelta, token).catch(() => []);
-      }
-      events.push(
-        ...(actors.length
-          ? actors.map((a) => ({ kind: "fork", actor: a, repo: fullName }))
-          : [{ kind: "fork", count: forkDelta, repo: fullName }]),
-      );
-    }
+    repos[fullName] = entry;
   }
 
-  return events;
+  return { events, repos };
 }
 
 const esc = (s) =>
@@ -182,25 +288,34 @@ const repoLink = (full) => {
 
 const SECTIONS = [
   { kind: "star", icon: "⭐", title: "Starred" },
-  { kind: "unstar", icon: "💔", title: "Unstarred" },
+  { kind: "unstar", icon: "💔", title: "Unstarred", sign: "−" },
   { kind: "fork", icon: "🍴", title: "Forked" },
+  { kind: "unfork", icon: "🗑", title: "Fork deleted", sign: "−" },
   { kind: "follow", icon: "➕", title: "New followers" },
   { kind: "unfollow", icon: "➖", title: "Unfollowed" },
   { kind: "deleted", icon: "👻", title: "Account deleted" },
 ];
 
+// Telegram caps a message at 4096 characters; a viral day must not lose the
+// follower total off the end.
+const MAX_LINES = 20;
+
 function formatMessage(events, followerCount) {
   const parts = [];
-  for (const { kind, icon, title } of SECTIONS) {
+  for (const { kind, icon, title, sign = "+" } of SECTIONS) {
     const group = events.filter((e) => e.kind === kind);
     if (!group.length) continue;
     const lines = group.map((e) => {
       if (e.actor && e.repo) return `${icon} ${userLink(e.actor)} → ${repoLink(e.repo)}`;
       if (e.actor) return `${icon} ${userLink(e.actor)}`;
       // Count-only fallback when we could not name the actor.
-      return `${icon} ${repoLink(e.repo)} <b>+${e.count}</b>`;
+      return `${icon} ${repoLink(e.repo)} <b>${sign}${e.count}</b>`;
     });
-    parts.push(`<b>${title}</b>\n${lines.join("\n")}`);
+    const shown = lines.slice(0, MAX_LINES);
+    if (lines.length > shown.length) {
+      shown.push(`<i>…and ${lines.length - shown.length} more</i>`);
+    }
+    parts.push(`<b>${title}</b>\n${shown.join("\n")}`);
   }
   parts.push(`<i>${followerCount} followers total</i>`);
   return parts.join("\n\n");
@@ -238,9 +353,17 @@ async function check(env) {
     fetchRepoStats(user, token),
   ]);
 
+  // On a first run every repo is unknown, so diffRepos raises no events — it
+  // just collects the actor lists that let the *next* tick name people.
+  const { events: repoEvents, repos: repoState } = await diffRepos(
+    firstRun ? {} : prev.repos ?? {},
+    repos,
+    token,
+  );
+
   // Seed silently — otherwise every existing follower and star arrives as new.
   if (firstRun) {
-    await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos }));
+    await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos: repoState }));
     return { seeded: true, followerCount: followers.length, repoCount: Object.keys(repos).length, events: [] };
   }
 
@@ -248,7 +371,7 @@ async function check(env) {
   const after = new Set(followers);
 
   const events = [
-    ...(await diffRepos(prev.repos ?? {}, repos, token)),
+    ...repoEvents,
     ...followers.filter((l) => !before.has(l)).map((actor) => ({ kind: "follow", actor })),
     ...(await classifyDepartures(prev.followers.filter((l) => !after.has(l)), token)),
   ];
@@ -258,7 +381,7 @@ async function check(env) {
   // mode is a duplicate message, not a silently swallowed follower.
   if (events.length) await sendTelegram(env, formatMessage(events, followers.length));
 
-  await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos }));
+  await env.FOLLOWERS.put(KV_KEY, JSON.stringify({ followers, repos: repoState }));
 
   return { seeded: false, followerCount: followers.length, events };
 }

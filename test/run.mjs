@@ -24,6 +24,9 @@ const cfg = readFileSync(join(here, "..", "wrangler.jsonc"), "utf8").replace(
 const GITHUB_USER = process.env.GITHUB_USER || JSON.parse(cfg).vars.GITHUB_USER;
 
 let telegramUp = true;
+// Simulates a GITHUB_TOKEN that cannot read /stargazers — the response GitHub
+// gives any token without `contents=write` / `public_repo`.
+let stargazersBlocked = false;
 const sent = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
@@ -31,6 +34,12 @@ globalThis.fetch = async (url, init) => {
     if (!telegramUp) return new Response("Not Found", { status: 404 });
     sent.push(JSON.parse(init.body).text);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+  if (stargazersBlocked && String(url).includes("/stargazers")) {
+    return new Response(
+      JSON.stringify({ message: "Resource not accessible by personal access token" }),
+      { status: 403 },
+    );
   }
   return realFetch(url, init);
 };
@@ -77,11 +86,17 @@ const base = kv.dump();
 const r2 = await run(makeKV(base));
 check("unchanged run reports nothing", r2.events.length === 0 && sent.length === 0);
 
-// 3 — synthetic star / fork / follow / unfollow are all detected
+// 3 — synthetic star / fork / follow / unfollow are all detected, by name
 const starRepo = Object.entries(base.repos).find(([, v]) => v.stars > 0)?.[0];
 const forkRepo = Object.entries(base.repos).find(([, v]) => v.forks > 0)?.[0];
 const t = structuredClone(base);
-if (starRepo) t.repos[starRepo].stars -= 1;
+// Drop a real stargazer from the baseline: the live list still has them, so
+// they must come back named rather than as an anonymous +1.
+let starActor;
+if (starRepo) {
+  t.repos[starRepo].stars -= 1;
+  starActor = t.repos[starRepo].stargazers?.pop();
+}
 if (forkRepo) t.repos[forkRepo].forks -= 1;
 const ghost = t.followers.pop();
 t.followers.unshift("octocat");
@@ -89,10 +104,64 @@ sent.length = 0;
 const r3 = await run(makeKV(t));
 const kinds = r3.events.map((e) => e.kind);
 if (starRepo) check("detects a new star", kinds.includes("star"), starRepo);
+if (starActor) {
+  const named = r3.events.find((e) => e.kind === "star" && e.actor === starActor);
+  check("names the account that starred", Boolean(named), starActor);
+}
 if (forkRepo) check("detects a new fork", kinds.includes("fork"), forkRepo);
 check("detects a new follower", kinds.includes("follow"), ghost);
 check("detects a departure", kinds.includes("unfollow") || kinds.includes("deleted"), "octocat");
 check("sends exactly one message", sent.length === 1);
+
+// 3b — the reverse: a stargazer the live list no longer has is named as unstar
+if (starRepo && base.repos[starRepo].stargazers?.length) {
+  const t3b = structuredClone(base);
+  t3b.repos[starRepo].stars += 1;
+  t3b.repos[starRepo].stargazers.push("octocat");
+  sent.length = 0;
+  const r3b = await run(makeKV(t3b));
+  const gone = r3b.events.find((e) => e.kind === "unstar" && e.actor === "octocat");
+  check("names the account that unstarred", Boolean(gone), starRepo);
+}
+
+// 3c — with /stargazers blocked, a star is still named from the public events
+// feed. This is the degraded mode a token without public_repo runs in.
+{
+  const ghHeaders = {
+    "User-Agent": "gh-notifier",
+    ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
+  };
+  let target, actor;
+  for (const full of Object.keys(base.repos)) {
+    const evs = await realFetch(
+      `https://api.github.com/repos/${full}/events?per_page=100`,
+      { headers: ghHeaders },
+    ).then((r) => (r.ok ? r.json() : []));
+    const w = Array.isArray(evs) && evs.find((e) => e.type === "WatchEvent");
+    if (w) {
+      target = full;
+      actor = w.actor.login;
+      break;
+    }
+  }
+  if (!target) {
+    console.log("  skip  events fallback — no WatchEvent left in any repo's feed");
+  } else {
+    const t3c = structuredClone(base);
+    t3c.repos[target].stars -= 1;
+    delete t3c.repos[target].stargazers; // no baseline, so no set diff is possible
+    stargazersBlocked = true;
+    sent.length = 0;
+    const r3c = await run(makeKV(t3c));
+    stargazersBlocked = false;
+    check(
+      "names starrer from events when /stargazers is blocked",
+      r3c.events.some((e) => e.kind === "star" && e.actor === actor),
+      `${target} → ${actor}`,
+    );
+    check("blocked stargazers list is not persisted as a baseline", sent.length === 1);
+  }
+}
 
 // 4 — the ordering guarantee: a failed send must not consume the events
 telegramUp = false;
