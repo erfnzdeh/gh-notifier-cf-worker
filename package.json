@@ -13,7 +13,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs && node test/admin-forward.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.114.0"

@@ -54,3 +54,53 @@ export async function setWebhook(env, url, secret) {
   });
   return { ok: res.ok, body: res.body };
 }
+
+/**
+ * The two calls the admin mirror needs, kept apart from sendMessage above
+ * because their failure semantics are the opposite. A notification that cannot
+ * be delivered costs a subscriber their subscription or a retried tick; a
+ * mirrored copy that cannot be delivered costs nothing at all, so these report
+ * failure rather than throwing and never unsubscribe anybody.
+ */
+
+/**
+ * Like sendMessage, but returns the new message's id and does not throw. The id
+ * is what lets the forward that follows attach itself to this header.
+ */
+export async function sendMessageRaw(env, chatId, text, extra = {}) {
+  const res = await call(env, "sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    ...extra,
+  });
+  let messageId;
+  try {
+    messageId = JSON.parse(res.body)?.result?.message_id;
+  } catch {
+    // A non-JSON body only means we cannot bind the forward to this header.
+  }
+  return { ...res, messageId };
+}
+
+/**
+ * Forward a message verbatim. Telegram copies whatever the message holds —
+ * text, media, entities — server-side, so nothing passes through the Worker.
+ *
+ * `replyToMessageId` is best-effort on purpose: each update arrives in its own
+ * invocation, so two people messaging at once can interleave header and
+ * forward in the admin chat. Hanging the forward off its header keeps the pair
+ * legible whatever order they land in, and Telegram is asked not to fail the
+ * send if that header has since been deleted.
+ */
+export async function forwardMessage(env, chatId, fromChatId, messageId, replyToMessageId) {
+  return call(env, "forwardMessage", {
+    chat_id: chatId,
+    from_chat_id: fromChatId,
+    message_id: messageId,
+    ...(replyToMessageId
+      ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
+      : {}),
+  });
+}

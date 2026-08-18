@@ -34,6 +34,25 @@ const PRIVACY = [
   "<b>/stop</b> deletes all of it.",
 ].join("\n");
 
+/**
+ * Only true when the operator has switched mirroring on, so it is appended
+ * rather than baked in — a bot running without ADMIN_CHAT_ID would be claiming
+ * a disclosure it does not make. Said plainly: someone deciding what to type
+ * into a stranger's bot is owed the blunt version, not a clause about
+ * "operational purposes".
+ */
+const MIRRORED = [
+  "",
+  "<b>What the operator sees</b>",
+  "Every message you send me is copied to the person who runs this bot,",
+  "with your Telegram name, username and id. <b>/stop</b> erases your data",
+  "here but cannot unsend those copies — so do not send me anything you",
+  "would not want read.",
+].join("\n");
+
+/** The notice, plus the mirroring paragraph when mirroring is actually on. */
+const privacy = (env) => (env.ADMIN_CHAT_ID ? `${PRIVACY}\n${MIRRORED}` : PRIVACY);
+
 const reply = (text) => ({ text });
 
 async function watch(env, chatId, arg) {
@@ -121,11 +140,11 @@ export async function handleMessage(env, message) {
 
   switch (command) {
     case "/start":
-      return reply(`${HELP}\n\n${PRIVACY}`);
+      return reply(`${HELP}\n\n${privacy(env)}`);
     case "/help":
       return reply(HELP);
     case "/privacy":
-      return reply(PRIVACY);
+      return reply(privacy(env));
     case "/watch":
       return watch(env, chatId, arg);
     case "/unwatch":

@@ -30,6 +30,14 @@ subscribers still supply nothing.
 
 `/stop` deletes the record. It is a real delete, not a flag.
 
+**Unless you switch on mirroring.** With `ADMIN_CHAT_ID` set, every message a
+subscriber sends is copied to that chat, with their Telegram name, username and id —
+see [the admin mirror](#the-admin-mirror). That copy lives in your chat history and
+`/stop` cannot reach it, so the paragraph above stops being the whole story. The
+bot's `/privacy` text says so on its own whenever the variable is set; if you run a
+fork that strips that disclosure, you are collecting messages people were told you
+were not.
+
 This is an open tracker: anyone can watch any public account, including one they do
 not own. Everything reported is already public on github.com, but it is worth being
 deliberate about — the alternative is a one-time verification code in the GitHub
@@ -88,6 +96,13 @@ npx wrangler secret put TRIGGER_SECRET
 npx wrangler secret put GITHUB_TOKEN
 ```
 
+`ADMIN_CHAT_ID` is optional and does two jobs: it receives the per-tick failure
+summary, and it turns on the admin mirror. Leave it unset and neither happens.
+
+```bash
+npx wrangler secret put ADMIN_CHAT_ID
+```
+
 Deploy, then point Telegram at the Worker:
 
 ```bash
@@ -100,6 +115,29 @@ curl "https://gh-notifier-bot.<subdomain>.workers.dev/admin/set-webhook?key=$TRI
 
 `/admin/tick?key=…` runs a pass immediately, which is how you seed without waiting
 for the cron.
+
+## The admin mirror
+
+With `ADMIN_CHAT_ID` set, every incoming message is copied to that chat: a JSON
+header naming the sender, then the message itself forwarded verbatim. It is the
+operator's window into what people are actually typing — which is how you find the
+commands they expect and the bot does not have.
+
+Ported from RichTextEchoBot's `AdminForwardMiddleware`, and best-effort in the same
+way: nothing it does can fail a webhook or cost a subscriber their reply. The header
+and the forward are attempted independently, so a failed header still gets you the
+message, and both are handed to `ctx.waitUntil` so the webhook can acknowledge
+Telegram immediately — an update left unacknowledged is one Telegram sends again,
+which would mirror it twice.
+
+It costs two Telegram calls per message and no KV at all. The ceiling is Telegram's
+own rate limit of roughly one message per second into any single chat: two messages
+per update means the admin chat starts collecting 429s at about half the inbound rate
+a single chat could otherwise absorb. Far away at this scale, and the failures are
+logged rather than retried, so crossing it costs visibility rather than delivery.
+
+Set `ADMIN_CHAT_ID` to your own numeric chat id, and press /start on the bot first —
+it cannot message you until you do.
 
 ## Limits
 
