@@ -17,12 +17,12 @@
   },
 
   // Its own namespace, separate from the single-tenant Worker's FOLLOWERS.
-  // Create one and paste the id here:
-  //   npx wrangler kv namespace create STORE
+  // Not a secret — a namespace id is useless without an API token. Recreate
+  // with: npx wrangler kv namespace create STORE
   "kv_namespaces": [
     {
       "binding": "STORE",
-      "id": "<run: npx wrangler kv namespace create STORE>"
+      "id": "106de8cc5db14be08543ad4c874dff6b"
     }
   ],
 
