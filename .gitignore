@@ -2,6 +2,9 @@ node_modules/
 .wrangler/
 .dev.vars
 .dev.vars.*
+# ...except the checked-in list of which secrets the bot needs. It holds names
+# and explanations, never values.
+!.dev.vars.example
 .env
 .env.*
 .DS_Store

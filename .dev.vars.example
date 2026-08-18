@@ -1,0 +1,24 @@
+# Copy to .dev.vars for `wrangler dev`, and set the same values in production
+# with `npx wrangler secret put <NAME>`. .dev.vars is gitignored; this file is
+# the checked-in list of what the bot needs.
+
+# From @BotFather. Identifies and authenticates the bot.
+TELEGRAM_BOT_TOKEN=
+
+# Any long random string. Telegram echoes it back on every update in the
+# X-Telegram-Bot-Api-Secret-Token header, which is how the webhook tells a real
+# update from anyone who guessed the URL. Generate one with:
+#   openssl rand -hex 32
+TELEGRAM_WEBHOOK_SECRET=
+
+# Gates /admin/set-webhook and /admin/tick. Also: openssl rand -hex 32
+TRIGGER_SECRET=
+
+# Classic PAT with `public_repo`. Not per-user — one bot-owned token supplies
+# the 5,000 requests/hour budget for every subscriber, and lets the bot read
+# /repos/{owner}/{repo}/stargazers, the one endpoint here that is not public.
+# Without it the bot still works, naming starrers from the events feed instead.
+GITHUB_TOKEN=
+
+# Optional. A chat id to receive a summary when accounts fail to poll.
+ADMIN_CHAT_ID=
