@@ -20,5 +20,14 @@ TRIGGER_SECRET=
 # Without it the bot still works, naming starrers from the events feed instead.
 GITHUB_TOKEN=
 
-# Optional. A chat id to receive a summary when accounts fail to poll.
+# Optional, and it does two jobs — setting it switches both on.
+#
+#   1. Accounts that fail to poll are summarised to this chat each tick.
+#   2. Every message anyone sends the bot is mirrored here, with the sender's
+#      Telegram name, username and id.
+#
+# The second is a real disclosure, not a debug aid: /start and /privacy tell
+# subscribers about it, but only while this is set. Leave it unset and the bot
+# neither mirrors nor claims to. Messages already forwarded cannot be unsent,
+# including by /stop.
 ADMIN_CHAT_ID=
