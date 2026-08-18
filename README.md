@@ -13,6 +13,9 @@ GitHub has no notification event for any of these. Its notification system is bu
 entirely around repository conversations, CI and mentions — `/notifications/settings`
 doesn't even exist as an endpoint — so the only way to know is to poll and diff.
 
+> **Looking for the Telegram bot version?** The `multi-tenant` branch runs this as a
+> bot anyone can subscribe to, with `/watch <username>`. See [docs/BOT.md](docs/BOT.md).
+
 ## How it works
 
 One cron tick fetches your follower list and your repo list, diffs both against a

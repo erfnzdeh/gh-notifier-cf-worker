@@ -1,33 +1,30 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
 
-  // The deployed Worker name. Changing it deploys a *new* Worker and orphans
-  // the old one — including its secrets, which are per-Worker.
-  "name": "gh-notifier",
+  // A *different* Worker name from the single-tenant `gh-notifier` on main.
+  // Deploying this branch under that name would replace the personal notifier
+  // and orphan its secrets, which are per-Worker.
+  "name": "gh-notifier-bot",
   "main": "src/index.js",
   "compatibility_date": "2026-07-25",
 
-  // Hourly, on the hour. Cron Triggers are free (5 per account) and a tick with
-  // no net change costs two list requests, so this stays far inside the GitHub
-  // rate limit. Shorter windows also narrow the known gap: a star or follow
-  // that is undone within a single tick still cancels out unseen.
+  // Every five minutes. Accounts are hashed into 12 shards (see SHARDS in
+  // src/index.js), so each is polled once an hour while any single tick only
+  // wakes a twelfth of them — which is what keeps a tick inside the free
+  // plan's 50 external subrequests per invocation.
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
 
-  // Create your own with: wrangler kv namespace create FOLLOWERS
-  // Not a secret — a namespace id is useless without an API token.
+  // Its own namespace, separate from the single-tenant Worker's FOLLOWERS.
+  // Create one and paste the id here:
+  //   npx wrangler kv namespace create STORE
   "kv_namespaces": [
     {
-      "binding": "FOLLOWERS",
-      "id": "268a9a8344ab473db9d88aa5df9c8ccc"
+      "binding": "STORE",
+      "id": "<run: npx wrangler kv namespace create STORE>"
     }
   ],
-
-  // ── Change this to your own GitHub username before deploying. ──
-  "vars": {
-    "GITHUB_USER": "erfnzdeh"
-  },
 
   "observability": {
     "enabled": true
