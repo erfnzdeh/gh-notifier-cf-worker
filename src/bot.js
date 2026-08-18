@@ -12,31 +12,27 @@ const MAX_REPOS = 200; // an account with more costs too much to snapshot
 const LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 const HELP = [
-  "<b>gh-notifier</b> — GitHub activity GitHub does not notify you about:",
-  "stars, forks, follows and unfollows.",
+  "<b>gh-notifier</b>",
+  "GitHub activity GitHub does not notify you about: stars, forks, follows and unfollows.",
   "",
-  "<b>/watch</b> <i>username</i> — start watching a GitHub account",
-  "<b>/unwatch</b> <i>username</i> — stop watching one",
-  "<b>/list</b> — what you are watching",
-  "<b>/stop</b> — unwatch everything and delete your data",
+  "<b>/watch</b> <i>username</i> starts watching a GitHub account",
+  "<b>/unwatch</b> <i>username</i> stops watching one",
+  "<b>/list</b> shows what you are watching",
+  "<b>/stop</b> unwatches everything and deletes your data",
   "",
-  `You can watch up to ${MAX_WATCHES} accounts. Only public activity is visible,`,
-  "and only the net change between checks — a star added and removed within",
-  "the same window cancels out.",
+  `You can watch up to ${MAX_WATCHES} accounts. Only public activity is visible, and only the net change between checks: a star added and removed within the same window cancels out.`,
 ].join("\n");
 
 const PRIVACY = [
   "<b>What I store</b>",
-  "Your Telegram chat id and the GitHub usernames you asked me to watch.",
-  "Nothing else — no GitHub login, no token, no email. Everything I read is",
-  "public on github.com.",
+  "Your Telegram chat id and the GitHub usernames you asked me to watch. Nothing else: no GitHub login, no token, no email. Everything I read is public on github.com.",
   "",
   "<b>/stop</b> deletes all of it.",
 ].join("\n");
 
 /**
  * Only true when the operator has switched mirroring on, so it is appended
- * rather than baked in — a bot running without ADMIN_CHAT_ID would be claiming
+ * rather than baked in. A bot running without ADMIN_CHAT_ID would be claiming
  * a disclosure it does not make. Said plainly: someone deciding what to type
  * into a stranger's bot is owed the blunt version, not a clause about
  * "operational purposes".
@@ -44,10 +40,7 @@ const PRIVACY = [
 const MIRRORED = [
   "",
   "<b>What the operator sees</b>",
-  "Every message you send me is copied to the person who runs this bot,",
-  "with your Telegram name, username and id. <b>/stop</b> erases your data",
-  "here but cannot unsend those copies — so do not send me anything you",
-  "would not want read.",
+  "Every message you send me is copied to the person who runs this bot, with your Telegram name, username and id. <b>/stop</b> erases your data here but cannot unsend those copies, so do not send me anything you would not want read.",
 ].join("\n");
 
 /** The notice, plus the mirroring paragraph when mirroring is actually on. */
@@ -90,7 +83,7 @@ async function watch(env, chatId, arg) {
 
   const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   return reply(
-    `Watching <b>${esc(user.login)}</b> — ${plural(user.followers, "follower")}, ` +
+    `Watching <b>${esc(user.login)}</b>: ${plural(user.followers, "follower")}, ` +
       `${plural(user.repos, "public repo")}.\n\n` +
       "I take a baseline first, then message you when something changes.",
   );
@@ -119,7 +112,7 @@ async function stop(env, chatId) {
   return reply(
     watching.length
       ? `Stopped watching ${watching.length} account${watching.length === 1 ? "" : "s"}. Your data is deleted.`
-      : "Nothing to stop — I hold no data for you.",
+      : "Nothing to stop. I hold no data for you.",
   );
 }
 
@@ -160,7 +153,7 @@ export async function handleMessage(env, message) {
 
 /**
  * Handle an update and deliver the answer. Errors are reported to the user
- * rather than swallowed — a command that silently does nothing is worse than
+ * rather than swallowed. A command that silently does nothing is worse than
  * one that says it failed.
  */
 export async function handleUpdate(env, update) {

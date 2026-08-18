@@ -1,7 +1,7 @@
 /**
  * Everything that talks to GitHub: polling an account and diffing it against
  * the previous snapshot. Lifted from the single-tenant worker unchanged except
- * for the entry point — `pollAccount` takes the login and the previous
+ * for the entry point. `pollAccount` takes the login and the previous
  * snapshot as arguments instead of reading them from env and KV, so one tick
  * can poll many accounts.
  *
@@ -117,7 +117,7 @@ const ACTOR_LISTS = [
 
 /**
  * Every login on one of a repo's actor lists, or undefined if the list is
- * longer than we are willing to page through — past that the snapshot stops
+ * longer than we are willing to page through. Past that the snapshot stops
  * being worth its request cost and we fall back to reporting counts.
  */
 async function fetchActors(spec, fullName, count, token) {
@@ -135,7 +135,7 @@ async function fetchActors(spec, fullName, count, token) {
 }
 
 /**
- * Fallback for naming arrivals when the actor list is out of reach — the
+ * Fallback for naming arrivals when the actor list is out of reach, which is the
  * normal case for stargazers, since that endpoint demands a token with
  * `public_repo` while everything else here reads fine anonymously.
  *
@@ -185,8 +185,8 @@ async function classifyDepartures(logins, token) {
  * Diff repo snapshots into star/unstar/fork/unfork events, and return the
  * snapshot to store next. A repo whose count moved gets its actor list
  * refetched and set-diffed, which names both arrivals and departures. When we
- * cannot do that — budget spent, request failed, list too long, or no baseline
- * yet — we emit the count-only event and drop the stored list rather than keep
+ * cannot do that (budget spent, request failed, list too long, or no baseline
+ * yet) we emit the count-only event and drop the stored list rather than keep
  * one we know is stale, so the next tick backfills a fresh baseline.
  */
 async function diffRepos(prev, curr, token) {
@@ -210,7 +210,7 @@ async function diffRepos(prev, curr, token) {
     for (const spec of ACTOR_LISTS) {
       const count = now[spec.countField];
       const wasList = before?.[spec.field];
-      // A brand new repo has nothing to compare against — no events, but we
+      // A brand new repo has nothing to compare against, so no events, but we
       // still want a baseline so the next tick can name whoever shows up.
       const delta = before ? count - before[spec.countField] : 0;
 
@@ -245,7 +245,7 @@ async function diffRepos(prev, curr, token) {
 
       // The set diff is authoritative and covers both directions. Only when it
       // could not run do we fall back to the events feed, which names arrivals
-      // and nothing else — a departure stays a bare count either way.
+      // and nothing else. A departure stays a bare count either way.
       if (!named.length && delta > 0) {
         const actors = actorsFromEvents(await repoEvents(), spec.eventType, delta);
         for (const actor of actors) {
@@ -268,7 +268,7 @@ async function diffRepos(prev, curr, token) {
 
 /**
  * Poll one account and diff it against `prev`. Returns the events to report
- * and the snapshot to store — but writes nothing and sends nothing, so the
+ * and the snapshot to store, but writes nothing and sends nothing, so the
  * caller keeps control of the send-before-commit ordering.
  *
  * `prev` of null means we have never seen this account: the caller must store
@@ -283,7 +283,7 @@ export async function pollAccount(login, prev, token) {
     fetchRepoStats(login, token),
   ]);
 
-  // On a first run every repo is unknown, so diffRepos raises no events — it
+  // On a first run every repo is unknown, so diffRepos raises no events. It
   // just collects the actor lists that let the *next* tick name people.
   const { events: repoEvents, repos: repoState } = await diffRepos(
     firstRun ? {} : prev.repos ?? {},

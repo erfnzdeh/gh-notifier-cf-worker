@@ -1,5 +1,5 @@
 /**
- * gh-notifier — a multi-tenant Telegram bot for the GitHub activity GitHub
+ * gh-notifier: a multi-tenant Telegram bot for the GitHub activity GitHub
  * does not notify you about: stars, forks, follows and unfollows.
  *
  * Descended from the single-tenant worker, which watched one hardcoded account
@@ -29,7 +29,7 @@ const SHARDS = 12;
 /**
  * The free plan allows 50 external subrequests per invocation. Each account
  * costs two before any actor lookups or sends, so this leaves comfortable
- * headroom. Accounts over the cap are not dropped — they simply come round on
+ * headroom. Accounts over the cap are not dropped. They simply come round on
  * the next cycle, and the tick says so in the logs rather than truncating
  * silently.
  */
@@ -51,7 +51,7 @@ function shardOf(login) {
  * Delivery happens before the snapshot advances. If every send fails the
  * snapshot stays put and the next tick re-detects the same events, so the
  * failure mode is a duplicate message rather than a silently swallowed
- * follower. Once anyone has been told, the snapshot advances — re-sending to
+ * follower. Once anyone has been told, the snapshot advances, because re-sending to
  * the whole list to catch one straggler is the worse trade.
  */
 async function pollOne(env, loginKey) {
@@ -66,7 +66,7 @@ async function pollOne(env, loginKey) {
     env.GITHUB_TOKEN,
   );
 
-  // A first sighting is stored silently — otherwise the opening message would
+  // A first sighting is stored silently, otherwise the opening message would
   // list every existing follower and star as new.
   if (seeded || !events.length) {
     await putStateIfChanged(env, login, snapshot);
@@ -162,7 +162,7 @@ export default {
     const url = new URL(request.url);
 
     // Telegram retries anything that is not a 2xx, so an update we accepted is
-    // acknowledged even when handling it went wrong — handleUpdate reports its
+    // acknowledged even when handling it went wrong. handleUpdate reports its
     // own failures to the user.
     if (url.pathname === "/telegram/webhook") {
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
@@ -181,7 +181,7 @@ export default {
       // Mirrored before handling and never awaited on the response path: the
       // operator should see what arrived even if handling it goes wrong, and
       // an update Telegram has not been acknowledged for is an update it will
-      // send again — which would mirror it twice. forwardToAdmin never
+      // send again, which would mirror it twice. forwardToAdmin never
       // rejects, so nothing here can fail the webhook.
       const mirrored = forwardToAdmin(env, update);
       if (ctx?.waitUntil) ctx.waitUntil(mirrored);

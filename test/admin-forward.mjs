@@ -38,7 +38,7 @@ globalThis.fetch = async (input, init) => {
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
-  console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${detail ? `: ${detail}` : ""}`);
   if (!cond) failures++;
 };
 
@@ -67,14 +67,14 @@ const only = (method) => world.calls.filter((c) => c.method === method);
 
 console.log("\nadmin mirror tests\n");
 
-// 1 — off unless the operator asked for it
+// 1: off unless the operator asked for it
 {
   reset();
   const r = await forwardToAdmin(env({ ADMIN_CHAT_ID: undefined }), { message: msg() });
   check("no ADMIN_CHAT_ID means no mirroring", r.skipped === "disabled" && world.calls.length === 0);
 }
 
-// 2 — the shape of a mirrored message
+// 2: the shape of a mirrored message
 {
   reset();
   const r = await forwardToAdmin(env(), { message: msg() });
@@ -93,7 +93,7 @@ console.log("\nadmin mirror tests\n");
   check("the header does not buzz", header.body.disable_notification === true);
 }
 
-// 3 — the header contents
+// 3: the header contents
 {
   reset();
   await forwardToAdmin(env(), { message: msg({ from: { ...msg().from, is_premium: true } }) });
@@ -106,7 +106,7 @@ console.log("\nadmin mirror tests\n");
   check("header reports the message was not itself a forward", json.forwarded === false);
 }
 
-// 4 — a forwarded message is flagged as one
+// 4: a forwarded message is flagged as one
 {
   reset();
   await forwardToAdmin(env(), { message: msg({ forward_origin: { type: "user" } }) });
@@ -114,7 +114,7 @@ console.log("\nadmin mirror tests\n");
   check("a forwarded message is marked", /"forwarded": true/.test(text));
 }
 
-// 5 — HTML in a display name cannot break the header
+// 5: HTML in a display name cannot break the header
 {
   reset();
   await forwardToAdmin(env(), { message: msg({ from: { id: 9, first_name: "<b>evil</b>" } }) });
@@ -122,14 +122,14 @@ console.log("\nadmin mirror tests\n");
   check("a name with markup is escaped", text.includes("&lt;b&gt;evil&lt;/b&gt;") && !text.includes("<b>evil"));
 }
 
-// 6 — the operator's own chat is not mirrored back into itself
+// 6: the operator's own chat is not mirrored back into itself
 {
   reset();
   const r = await forwardToAdmin(env(), { message: msg({ chat: { id: 77 } }) });
   check("the admin's own messages are skipped", r.skipped === "admin" && world.calls.length === 0);
 }
 
-// 7 — best effort: neither half can break the other, or the caller
+// 7: best effort: neither half can break the other, or the caller
 {
   reset();
   world.fail.sendMessage = 400;
@@ -149,7 +149,7 @@ console.log("\nadmin mirror tests\n");
   check("total Telegram failure still resolves", r3.forwarded === false);
 }
 
-// 8 — updates that are not messages
+// 8: updates that are not messages
 {
   reset();
   const r = await forwardToAdmin(env(), { edited_message: msg() });
@@ -158,7 +158,7 @@ console.log("\nadmin mirror tests\n");
   check("an empty update is ignored", r2.skipped === "not a message");
 }
 
-// 9 — through the real webhook, which is where it actually runs
+// 9: through the real webhook, which is where it actually runs
 {
   reset();
   const e = env();
@@ -176,7 +176,7 @@ console.log("\nadmin mirror tests\n");
   check("and the sender still got their reply", only("sendMessage").length === 2);
 }
 
-// 10 — a broken mirror must never cost the sender their reply
+// 10: a broken mirror must never cost the sender their reply
 {
   reset();
   world.fail.forwardMessage = "throw";
@@ -194,7 +194,7 @@ console.log("\nadmin mirror tests\n");
   check("and the command was still handled", only("sendMessage").length === 2);
 }
 
-// 11 — the promise the runtime is asked to wait on is the mirror's
+// 11: the promise the runtime is asked to wait on is the mirror's
 {
   reset();
   let waited = null;
@@ -211,7 +211,7 @@ console.log("\nadmin mirror tests\n");
   check("and it resolves", (await waited)?.forwarded === true);
 }
 
-// 12 — the privacy notice has to match what the bot actually does
+// 12: the privacy notice has to match what the bot actually does
 {
   const saidTo = async (e) => {
     reset();

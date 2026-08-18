@@ -10,14 +10,14 @@
 
   // Every five minutes. Accounts are hashed into 12 shards (see SHARDS in
   // src/index.js), so each is polled once an hour while any single tick only
-  // wakes a twelfth of them — which is what keeps a tick inside the free
+  // wakes a twelfth of them, which is what keeps a tick inside the free
   // plan's 50 external subrequests per invocation.
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
 
   // Its own namespace, separate from the single-tenant Worker's FOLLOWERS.
-  // Not a secret — a namespace id is useless without an API token. Recreate
+  // Not a secret: a namespace id is useless without an API token. Recreate
   // with: npx wrangler kv namespace create STORE
   "kv_namespaces": [
     {

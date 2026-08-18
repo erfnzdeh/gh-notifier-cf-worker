@@ -18,7 +18,7 @@ async function call(env, method, body) {
  *
  * Terminal: the user blocked the bot, deleted the chat, or was deactivated.
  * Retrying will never work, so we report `gone` and the caller unsubscribes
- * them. This is the only way we ever learn someone left — Telegram sends no
+ * them. This is the only way we ever learn someone left, because Telegram sends no
  * event for being blocked.
  *
  * Transient: rate limits, Telegram 5xx, network trouble. Those throw, and the
@@ -85,8 +85,8 @@ export async function sendMessageRaw(env, chatId, text, extra = {}) {
 }
 
 /**
- * Forward a message verbatim. Telegram copies whatever the message holds —
- * text, media, entities — server-side, so nothing passes through the Worker.
+ * Forward a message verbatim. Telegram copies whatever the message holds
+ * (text, media, entities) server-side, so nothing passes through the Worker.
  *
  * `replyToMessageId` is best-effort on purpose: each update arrives in its own
  * invocation, so two people messaging at once can interleave header and

@@ -116,7 +116,7 @@ globalThis.fetch = async (input, init) => {
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
-  console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${detail ? `: ${detail}` : ""}`);
   if (!cond) failures++;
 };
 
@@ -153,7 +153,7 @@ function reset() {
 
 console.log("\ngh-notifier bot smoke tests\n");
 
-// 1 — commands
+// 1: commands
 {
   reset();
   const e = env();
@@ -187,7 +187,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("unwatch clears the fan-out index", e.STORE.dump()["watch:erfnzdeh"] === undefined);
 }
 
-// 2 — seeding, dedup and delivery
+// 2: seeding, dedup and delivery
 {
   reset();
   const e = env();
@@ -220,7 +220,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("a new star is named", /grace/.test(world.sent[0]?.text ?? ""));
 }
 
-// 3 — each account is polled once per cycle, not once per tick
+// 3: each account is polled once per cycle, not once per tick
 {
   reset();
   const e = env();
@@ -234,7 +234,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("no single tick polls them all", cycle.every((t) => t.polled < 6));
 }
 
-// 4 — a blocked subscriber is dropped, a flaky one is retried
+// 4: a blocked subscriber is dropped, a flaky one is retried
 {
   reset();
   const e = env();
@@ -264,7 +264,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("the event survives the outage", /grace/.test(world.sent[0]?.text ?? ""));
 }
 
-// 5 — /stop
+// 5: /stop
 {
   reset();
   const e = env();
@@ -278,7 +278,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   );
 }
 
-// 6 — the per-subscriber cap
+// 6: the per-subscriber cap
 {
   reset();
   const e = env();
@@ -290,7 +290,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("the cap holds in storage", JSON.parse(e.STORE.dump()["sub:1"]).length === 10);
 }
 
-// 6b — an overflowing shard defers accounts, it does not starve them
+// 6b: an overflowing shard defers accounts, it does not starve them
 {
   reset();
   const e = env();
@@ -316,7 +316,7 @@ console.log("\ngh-notifier bot smoke tests\n");
   check("every deferred account is polled within a few cycles", bulk.length === 200, `${bulk.length}/200`);
 }
 
-// 7 — the webhook is the security boundary
+// 7: the webhook is the security boundary
 {
   reset();
   const e = env();

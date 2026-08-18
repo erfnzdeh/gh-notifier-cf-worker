@@ -2,7 +2,7 @@
  * The KV data model.
  *
  *   sub:{chat_id}   -> ["erfnzdeh", "octocat"]     what one subscriber watches
- *   watch:{login}   -> { login, chats: [id, ...] }  who to notify — the fan-out index
+ *   watch:{login}   -> { login, chats: [id, ...] }  who to notify, the fan-out index
  *   state:{login}   -> { followers, repos }         the snapshot, one per account
  *
  * The reverse index is the point: the cron iterates *accounts*, not
@@ -59,7 +59,7 @@ export async function addWatch(env, chatId, login) {
 
 /**
  * Unsubscribe a chat. When the last watcher leaves, the account's snapshot is
- * deleted too — otherwise the cron would keep paying to poll an account nobody
+ * deleted too, otherwise the cron would keep paying to poll an account nobody
  * is listening to.
  */
 export async function removeWatch(env, chatId, login) {

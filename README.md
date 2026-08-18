@@ -10,8 +10,8 @@ Telegram alerts when someone **stars**, **forks**, **follows** or **unfollows** 
 GitHub. One Cloudflare Worker on a cron trigger. Free tier, no server, no database.
 
 GitHub has no notification event for any of these. Its notification system is built
-entirely around repository conversations, CI and mentions — `/notifications/settings`
-doesn't even exist as an endpoint — so the only way to know is to poll and diff.
+entirely around repository conversations, CI and mentions. `/notifications/settings`
+doesn't even exist as an endpoint, so the only way to know is to poll and diff.
 
 > **Looking for the Telegram bot version?** The `multi-tenant` branch runs this as a
 > bot anyone can subscribe to, with `/watch <username>`. See [docs/BOT.md](docs/BOT.md).
@@ -32,10 +32,10 @@ Two design decisions worth knowing, both learned the hard way:
 **Stars and forks come from repo counts, not the events feed.** The obvious approach is
 to walk `/users/{user}/received_events` for `WatchEvent` and `ForkEvent`. That feed is
 capped at ~300 events and, on an account that follows a few active people, turns over 100
-events in about six hours — a daily cron would miss almost everything. Diffing
+events in about six hours, so a daily cron would miss almost everything. Diffing
 `stargazers_count` and `forks_count` from `/users/{user}/repos` is one request, exact, and
 has no retention window. Naming *who* means keeping each repo's stargazer and fork logins
-in the snapshot and diffing them as sets — one extra request, and only for repos whose
+in the snapshot and diffing them as sets: one extra request, and only for repos whose
 count actually moved. That set diff is what makes an unstar or a deleted fork name an
 account instead of a bare number.
 
@@ -65,7 +65,7 @@ npx wrangler kv namespace create FOLLOWERS
 
 **3. Set `GITHUB_USER`** in `wrangler.jsonc` to your own username.
 
-**4. Secrets.** Run each and paste at the prompt — the value is *not* a command argument:
+**4. Secrets.** Run each and paste at the prompt. The value is *not* a command argument:
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
@@ -76,7 +76,7 @@ npx wrangler secret put TRIGGER_SECRET
 `TRIGGER_SECRET` is any random string; it guards the manual endpoint. Generate one with
 `openssl rand -hex 16`.
 
-**5. `GITHUB_TOKEN`** — required. Followers, repo counts and forks are all readable
+**5. `GITHUB_TOKEN`** is required. Followers, repo counts and forks are all readable
 anonymously, but **`/repos/{owner}/{repo}/stargazers` is not**: unauthenticated it returns
 `401 Requires authentication`. Without a working token you get stars reported as a bare
 `+1` with no name. A token also lifts the 60 requests/hour **per source IP** anonymous
@@ -91,13 +91,13 @@ Token type matters, and the obvious choice is the wrong one:
 | Classic PAT, **no scopes ticked** | works |
 
 Fine-grained tokens are the wrong tool here. The 403 response carries
-`x-accepted-github-permissions: metadata=read; contents=write` — to read a *public* list of
+`x-accepted-github-permissions: metadata=read; contents=write`, to read a *public* list of
 stargazers, a fine-grained token must hold **write access to your repository contents**.
 That is a poor trade for a read-only notifier.
 
 A classic token with `public_repo` is the practical minimum. A classic token with *no*
-scopes authenticates fine and lifts the rate limit, but still gets `404` on stargazers —
-GitHub hides the resource rather than returning `403`. Create one at
+scopes authenticates fine and lifts the rate limit, but still gets `404` on stargazers,
+because GitHub hides the resource rather than returning `403`. Create one at
 [github.com/settings/tokens](https://github.com/settings/tokens).
 
 **Without `public_repo` the worker still names starrers**, falling back to
@@ -113,7 +113,7 @@ the scope. Pick accordingly:
 | Classic, `public_repo` | yes (list diff) | **yes** |
 
 The events feed retains roughly 300 events for ~90 days, which an hourly cron comfortably
-outruns on a personal account — but it is a fallback, not the primary path.
+outruns on a personal account, but it is a fallback, not the primary path.
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
@@ -163,7 +163,7 @@ counts moved.
 
 `GET /run?key=<TRIGGER_SECRET>` triggers a run and returns the diff as JSON; anything else
 returns 403 or 404. `npx wrangler tail` streams live logs. Cron failures report themselves
-to Telegram rather than failing silently — though if the *bot token itself* is missing,
+to Telegram rather than failing silently, though if the *bot token itself* is missing,
 that report has no way out, so check `wrangler tail` when debugging a quiet Worker.
 
 ## Credit

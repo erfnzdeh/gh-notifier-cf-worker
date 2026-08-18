@@ -4,7 +4,7 @@
  * A port of the AdminForwardMiddleware in RichTextEchoBot: a header carrying
  * everything we know about the sender, then the message itself forwarded
  * verbatim. The header exists because a forward alone is not enough to answer
- * "who sent this" — a sender with forward privacy on arrives anonymous, and
+ * "who sent this". A sender with forward privacy on arrives anonymous, and
  * even a named one tells you nothing about their locale or client.
  *
  * Two properties are load-bearing, both inherited from the original:
@@ -19,8 +19,8 @@
  *
  * Cost, on the free plan: two external subrequests per incoming message and no
  * KV at all, which matters because KV writes are the scarce resource here. The
- * real ceiling is Telegram's own — roughly a message a second into any one
- * chat — so mirroring at two messages per update halves how many subscribers
+ * real ceiling is Telegram's own, roughly a message a second into any one
+ * chat, so mirroring at two messages per update halves how many subscribers
  * can be talking at once before the admin chat starts collecting 429s. At the
  * scale this bot is aimed at that is far away, and the failures are logged
  * rather than retried, so hitting it costs visibility rather than delivery.
@@ -32,7 +32,7 @@ import { forwardMessage, sendMessageRaw } from "./telegram.js";
 /**
  * Everything we know about a sender, as pretty JSON in a code block. Telegram
  * renders that syntax-highlighted and tap-to-copy, which is what makes the
- * user_id usable — it is the one field you actually reach for, whether to
+ * user_id usable. It is the one field you actually reach for, whether to
  * answer someone or to find them in the logs.
  */
 export function formatUserInfo(msg) {
@@ -54,7 +54,7 @@ export function formatUserInfo(msg) {
 
 /**
  * Mirror one update. Returns what it did, for tests and for the caller's logs;
- * callers are not expected to await it — see the webhook in index.js.
+ * callers are not expected to await it. See the webhook in index.js.
  */
 export async function forwardToAdmin(env, update) {
   const admin = env.ADMIN_CHAT_ID;

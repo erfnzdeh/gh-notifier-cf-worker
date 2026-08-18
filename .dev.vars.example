@@ -14,13 +14,13 @@ TELEGRAM_WEBHOOK_SECRET=
 # Gates /admin/set-webhook and /admin/tick. Also: openssl rand -hex 32
 TRIGGER_SECRET=
 
-# Classic PAT with `public_repo`. Not per-user — one bot-owned token supplies
+# Classic PAT with `public_repo`. Not per-user: one bot-owned token supplies
 # the 5,000 requests/hour budget for every subscriber, and lets the bot read
 # /repos/{owner}/{repo}/stargazers, the one endpoint here that is not public.
 # Without it the bot still works, naming starrers from the events feed instead.
 GITHUB_TOKEN=
 
-# Optional, and it does two jobs — setting it switches both on.
+# Optional, and it does two jobs. Setting it switches both on.
 #
 #   1. Accounts that fail to poll are summarised to this chat each tick.
 #   2. Every message anyone sends the bot is mirrored here, with the sender's

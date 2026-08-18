@@ -30,7 +30,7 @@ const MAX_LINES = 20;
 /**
  * One message per watched account. The account is named in the header rather
  * than folded into every line, because a subscriber watching several accounts
- * needs to know which one this is about — and because a tick where only one of
+ * needs to know which one this is about, and because a tick where only one of
  * their accounts moved should not mention the others.
  */
 export function formatMessage(login, events, followerCount) {
