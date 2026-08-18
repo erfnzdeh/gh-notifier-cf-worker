@@ -16,6 +16,7 @@ import { formatMessage, esc } from "./format.js";
 import { getState, getWatchers, listWatched, putStateIfChanged, removeWatch } from "./store.js";
 import { sendMessage, setWebhook } from "./telegram.js";
 import { handleUpdate } from "./bot.js";
+import { forwardToAdmin } from "./admin-forward.js";
 
 /**
  * Accounts are spread across ticks by a hash of their login, so each is polled
@@ -157,7 +158,7 @@ export default {
     );
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // Telegram retries anything that is not a 2xx, so an update we accepted is
@@ -177,6 +178,15 @@ export default {
       } catch {
         return new Response("ok\n");
       }
+      // Mirrored before handling and never awaited on the response path: the
+      // operator should see what arrived even if handling it goes wrong, and
+      // an update Telegram has not been acknowledged for is an update it will
+      // send again — which would mirror it twice. forwardToAdmin never
+      // rejects, so nothing here can fail the webhook.
+      const mirrored = forwardToAdmin(env, update);
+      if (ctx?.waitUntil) ctx.waitUntil(mirrored);
+      else await mirrored; // no ctx outside the runtime; keeps tests deterministic
+
       await handleUpdate(env, update);
       return new Response("ok\n");
     }
