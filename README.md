@@ -109,7 +109,7 @@ the scope. Pick accordingly:
 | Classic, no scopes | yes (events feed) | no |
 | Classic, `public_repo` | yes (list diff) | **yes** |
 
-The events feed retains roughly 300 events for ~90 days, which a daily cron comfortably
+The events feed retains roughly 300 events for ~90 days, which an hourly cron comfortably
 outruns on a personal account — but it is a fallback, not the primary path.
 
 ```bash
