@@ -31,8 +31,10 @@ to walk `/users/{user}/received_events` for `WatchEvent` and `ForkEvent`. That f
 capped at ~300 events and, on an account that follows a few active people, turns over 100
 events in about six hours — a daily cron would miss almost everything. Diffing
 `stargazers_count` and `forks_count` from `/users/{user}/repos` is one request, exact, and
-has no retention window. Naming *who* costs one extra request, and only for repos whose
-count actually moved.
+has no retention window. Naming *who* means keeping each repo's stargazer and fork logins
+in the snapshot and diffing them as sets — one extra request, and only for repos whose
+count actually moved. That set diff is what makes an unstar or a deleted fork name an
+account instead of a bare number.
 
 **Delivery happens before the snapshot advances.** Commit-then-send means a failed send
 silently consumes the events it failed to report. Send-then-commit means a failure costs
@@ -71,18 +73,54 @@ npx wrangler secret put TRIGGER_SECRET
 `TRIGGER_SECRET` is any random string; it guards the manual endpoint. Generate one with
 `openssl rand -hex 16`.
 
-**5. `GITHUB_TOKEN`** — technically optional, practically necessary. Every endpoint used
-is public, but unauthenticated GitHub allows 60 requests/hour **per source IP**, and
-Workers share egress IPs with other tenants who will exhaust it for you. This is not
-hypothetical; it takes minutes to hit. A token raises you to 5,000/hour.
+**5. `GITHUB_TOKEN`** — required. Followers, repo counts and forks are all readable
+anonymously, but **`/repos/{owner}/{repo}/stargazers` is not**: unauthenticated it returns
+`401 Requires authentication`. Without a working token you get stars reported as a bare
+`+1` with no name. A token also lifts the 60 requests/hour **per source IP** anonymous
+limit to 5,000/hour, which matters because Workers share egress IPs with other tenants.
 
-Create a fine-grained token at
-[github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
-with **Public Repositories (read-only)** and *no* account permissions — it reads exactly
-what an anonymous visitor can:
+Token type matters, and the obvious choice is the wrong one:
+
+| Token | `/stargazers` |
+|---|---|
+| None | `401 Requires authentication` |
+| Any fine-grained PAT without `contents=write` | `403 Resource not accessible by personal access token` |
+| Classic PAT, **no scopes ticked** | works |
+
+Fine-grained tokens are the wrong tool here. The 403 response carries
+`x-accepted-github-permissions: metadata=read; contents=write` — to read a *public* list of
+stargazers, a fine-grained token must hold **write access to your repository contents**.
+That is a poor trade for a read-only notifier.
+
+A classic token with `public_repo` is the practical minimum. A classic token with *no*
+scopes authenticates fine and lifts the rate limit, but still gets `404` on stargazers —
+GitHub hides the resource rather than returning `403`. Create one at
+[github.com/settings/tokens](https://github.com/settings/tokens).
+
+**Without `public_repo` the worker still names starrers**, falling back to
+`/repos/{owner}/{repo}/events`, which is fully anonymous and carries `WatchEvent` and
+`ForkEvent` with the actor attached. What you lose is unstars: GitHub emits no event when
+someone unstars, so naming a departure requires diffing the stargazer list, which requires
+the scope. Pick accordingly:
+
+| Token | Starrers named | Unstarrers named |
+|---|---|---|
+| None | yes (events feed) | no |
+| Classic, no scopes | yes (events feed) | no |
+| Classic, `public_repo` | yes (list diff) | **yes** |
+
+The events feed retains roughly 300 events for ~90 days, which a daily cron comfortably
+outruns on a personal account — but it is a fallback, not the primary path.
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
+```
+
+Check it took, on a repo you own that has at least one star:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://api.github.com/repos/<owner>/<repo>/stargazers
 ```
 
 **6. Deploy and seed.** The first run stores a baseline silently; without it every existing
@@ -106,14 +144,15 @@ counts moved.
 | Worker requests | 100,000/day | ~1/day |
 | KV reads | 100,000/day | 1/day |
 | KV writes | 1,000/day | 1/day |
-| KV storage | 1 GB | ~3 KB |
+| KV storage | 1 GB | ~4 KB |
 
 ## Limits
 
 - Only **net change between ticks** is visible. A follow and unfollow inside one window
   cancel out. Any polling design has this gap.
-- Unstars are reported as a count, not a name — GitHub offers no way to see who left
-  without storing every stargazer login.
+- Repos with more than 2,000 stargazers or forks are tracked by count only; paging the
+  whole list every time it moves is not worth the requests. Their events fall back to
+  `repo −1` with no name.
 - `/users/{user}/repos` covers repos you own. A token with `repo` scope would include
   private ones, but that is far more access than this needs.
 

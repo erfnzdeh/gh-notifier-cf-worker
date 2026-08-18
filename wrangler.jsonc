@@ -7,10 +7,12 @@
   "main": "src/index.js",
   "compatibility_date": "2026-07-25",
 
-  // 09:00 UTC daily. Cron Triggers are free (5 per account).
-  // Pick an hour that suits your timezone; the job is idempotent.
+  // Hourly, on the hour. Cron Triggers are free (5 per account) and a tick with
+  // no net change costs two list requests, so this stays far inside the GitHub
+  // rate limit. Shorter windows also narrow the known gap: a star or follow
+  // that is undone within a single tick still cancels out unseen.
   "triggers": {
-    "crons": ["0 9 * * *"]
+    "crons": ["0 * * * *"]
   },
 
   // Create your own with: wrangler kv namespace create FOLLOWERS
