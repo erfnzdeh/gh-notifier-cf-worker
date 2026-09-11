@@ -1,6 +1,6 @@
 # gh-notifier-cf-worker
 
-![license](https://img.shields.io/github/license/erfnzdeh/gh-notifier-cf-worker) ![platform](https://img.shields.io/badge/platform-Cloudflare_Workers-F38020?logo=cloudflareworkers&logoColor=white) ![alerts](https://img.shields.io/badge/alerts-Telegram-26A5E4?logo=telegram&logoColor=white) ![cost](https://img.shields.io/badge/cost-free_tier-brightgreen)
+![license](https://img.shields.io/github/license/erfnzdeh/gh-notifier-cf-worker) ![ci](https://github.com/erfnzdeh/gh-notifier-cf-worker/actions/workflows/ci.yml/badge.svg) ![platform](https://img.shields.io/badge/platform-Cloudflare_Workers-F38020?logo=cloudflareworkers&logoColor=white) ![alerts](https://img.shields.io/badge/alerts-Telegram-26A5E4?logo=telegram&logoColor=white) ![cost](https://img.shields.io/badge/cost-free_tier-brightgreen)
 
 <p align="center">
   <img src="docs/banner.png" alt="Telegram message from the bot listing new followers and an unfollow" width="700">
@@ -180,6 +180,13 @@ the user lookup means they're gone rather than that they left.
 Fixed from the original: owned-repo matching used a substring test against `owner/name`,
 which also fires on anyone else's repo whose *name* contains your username. This compares
 the owner segment exactly.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and ideas go in
+[issues](https://github.com/erfnzdeh/gh-notifier-cf-worker/issues); a pull
+request should come with a test. Security reports are private: see
+[SECURITY.md](SECURITY.md).
 
 ## License
 

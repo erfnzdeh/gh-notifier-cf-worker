@@ -1,0 +1,50 @@
+name: Bug report
+description: Something the Worker or the bot does wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem (webhook bypass, admin route without a key, leaked token) is not an issue.
+        Use a [private advisory](https://github.com/erfnzdeh/gh-notifier-cf-worker/security/advisories/new).
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Telegram commands (/watch, /list, /stop, …)
+        - Cron / polling / notifications
+        - Admin routes (/admin/tick, /admin/set-webhook)
+        - Deploy or wrangler
+        - Docs
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      placeholder: The bot said X. Or the tick stored Y. Or deploy failed with Z.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to see it
+      description: Commands, a tick, or a test case. Offline steps beat "it happened in production".
+      placeholder: |
+        1. /watch someuser
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: extras
+    attributes:
+      label: Anything else
+      description: Worker name, wrangler version, whether ADMIN_CHAT_ID is set. No tokens.
