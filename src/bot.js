@@ -12,7 +12,6 @@ const MAX_REPOS = 200; // an account with more costs too much to snapshot
 const LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 const HELP = [
-  "<b>gh-notifier</b>",
   "GitHub activity GitHub does not notify you about: stars, forks, follows and unfollows.",
   "",
   "<b>/watch</b> <i>username</i> starts watching a GitHub account",
@@ -133,7 +132,7 @@ export async function handleMessage(env, message) {
 
   switch (command) {
     case "/start":
-      return reply(`${HELP}\n\n${privacy(env)}`);
+      return reply(`${HELP}\n\n${PRIVACY}`);
     case "/help":
       return reply(HELP);
     case "/privacy":
