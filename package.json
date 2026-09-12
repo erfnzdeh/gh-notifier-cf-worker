@@ -16,6 +16,6 @@
     "test": "node test/run.mjs && node test/admin-forward.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.129.1"
   }
 }
